@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Collapse, Modal, Tooltip } from 'antd';
-import { PlusOutlined, CloseOutlined, SearchOutlined, ExclamationCircleOutlined, CloseCircleFilled } from '@ant-design/icons';
+import { PlusOutlined, CloseOutlined, SearchOutlined, ExclamationCircleOutlined, CloseCircleFilled, CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import Layout from '../../components/layout/Layout';
-import { getRuleById } from '../../data/rules';
+import { getRuleById, updateRule } from '../../data/rules';
 import { SUBFUNCTIONS } from '../../constants/subfunctions';
 import { InputParameter, FunctionType, ConfigurationStep } from '../../types/rule-configuration';
+import { getRuleConfiguration, saveRuleConfiguration } from '../../data/ruleConfigurations';
 import RuleConfigurationCard from '../../components/rules/RuleConfigurationCard';
 import { Input } from '../../components/ui/input';
-import { Select } from '../../components/ui/select';
 import { CustomSelect } from '../../components/ui/custom-select';
 import { Label } from '../../components/ui/label';
 
@@ -29,6 +29,10 @@ export default function RuleCreatePage() {
     const [activeAccordionKeys, setActiveAccordionKeys] = useState<string[]>([]);
     const [parameterErrors, setParameterErrors] = useState<Record<string, { type?: boolean; size?: boolean; dataType?: boolean }>>({});
     const [parametersLocked, setParametersLocked] = useState(false);
+    const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
+    const [isJsModalOpen, setIsJsModalOpen] = useState(false);
+    const [isCopied, setIsCopied] = useState(false);
+    const [currentJson, setCurrentJson] = useState<any>(null);
 
     useEffect(() => {
         if (ruleId) {
@@ -36,6 +40,31 @@ export default function RuleCreatePage() {
             if (ruleData) {
                 setRule(ruleData);
                 document.title = `${ruleData.name} - RCE`;
+
+                // Load saved configuration if exists
+                const savedConfig = getRuleConfiguration(parseInt(ruleId));
+                if (savedConfig) {
+                    console.log("📂 Loading saved configuration for rule:", ruleId);
+                    console.log("Saved config:", savedConfig);
+
+                    // Restore input parameters
+                    if (savedConfig.inputParameters && savedConfig.inputParameters.length > 0) {
+                        setInputParameters(savedConfig.inputParameters);
+                        setParametersLocked(true);
+                        console.log("✅ Input parameters restored:", savedConfig.inputParameters.length, "parameters");
+                    }
+
+                    // Restore configuration steps
+                    if (savedConfig.configurationSteps && savedConfig.configurationSteps.length > 0) {
+                        setConfigurationSteps(savedConfig.configurationSteps);
+                        setConfigurationStarted(true);
+                        console.log("✅ Configuration steps restored:", savedConfig.configurationSteps.length, "steps");
+                    }
+
+                    console.log("✅ Configuration loaded successfully!");
+                } else {
+                    console.log("ℹ️ No saved configuration found for rule:", ruleId);
+                }
             } else {
                 navigate('/rules');
             }
@@ -210,6 +239,278 @@ export default function RuleCreatePage() {
         setIsConfigModalOpen(true);
     };
 
+    const handleConfigUpdate = (stepId: string, config: any) => {
+        setConfigurationSteps(configurationSteps.map(step =>
+            step.id === stepId ? { ...step, config } : step
+        ));
+    };
+
+    const handleSave = () => {
+        // Generate the ruleFunction JSON structure
+        const ruleFunction = {
+            id: Date.now(), // Generate unique ID
+            code: "", // Will be generated later
+            returnType: "string", // Default, can be determined from output step
+            ruleId: rule?.id || "",
+            inputParams: inputParameters.map((param, index) => ({
+                id: parseInt(param.id),
+                sequence: index + 1,
+                name: param.size, // The field name entered by user
+                dataType: param.dataType?.toLowerCase() || "string",
+                paramType: "inputField", // Always inputField for input parameters
+                mandatory: "true",
+                default: "",
+                description: ""
+            })),
+            steps: configurationSteps.map((step, index) => {
+                const stepId = step.id;
+                const nextStep = index < configurationSteps.length - 1 ? configurationSteps[index + 1].id : null;
+
+                if (step.type === 'subfunction') {
+                    const subfunc = SUBFUNCTIONS.find(f => f.id === step.subfunctionId);
+                    const config = step.config || {};
+                    const inputParams = (config.params || []).map((paramConfig: any, paramIdx: number) => {
+                        let dataValue = '';
+                        let dataType = '';
+
+                        if (paramConfig.type === 'Static Value') {
+                            dataType = 'static';
+                            dataValue = paramConfig.value || '';
+                        } else if (paramConfig.type?.startsWith('Input Parameter')) {
+                            dataType = 'inputParam';
+                            // Find the matching input parameter and use its ID
+                            const matchedParam = inputParameters.find(p => p.name === paramConfig.type);
+                            dataValue = matchedParam?.id || '';
+                        } else {
+                            dataType = 'stepOutputVariable';
+                            // For step output variables, the value would be the step ID
+                            dataValue = paramConfig.value || '';
+                        }
+
+                        return {
+                            subFuncParamId: paramIdx + 1,
+                            data: {
+                                type: dataType,
+                                value: dataValue
+                            }
+                        };
+                    });
+
+                    return {
+                        id: stepId,
+                        type: "subFunction",
+                        outputVariableName: config.outputVariable || `step_${index + 1}_output_variable`,
+                        returnType: subfunc?.returnType?.toLowerCase() || "string",
+                        subFunction: {
+                            id: step.subfunctionId,
+                            inputParams
+                        },
+                        next: nextStep
+                    };
+                } else if (step.type === 'conditional') {
+                    return {
+                        id: stepId,
+                        type: "condition",
+                        outputVariableName: null,
+                        returnType: "boolean",
+                        conditions: [], // Will be populated with condition data
+                        next: {
+                            true: nextStep,
+                            false: null
+                        }
+                    };
+                } else if (step.type === 'output') {
+                    const outputConfig = step.config || {};
+                    let outputValue = '';
+                    let outputVariableName = '';
+
+                    if (outputConfig.type === 'stepOutputVariable') {
+                        // Use the previous step's ID
+                        if (index > 0) {
+                            outputValue = configurationSteps[index - 1].id;
+                            // Get the output variable name from previous step
+                            const prevStepConfig = configurationSteps[index - 1].config;
+                            outputVariableName = prevStepConfig?.outputVariable || `step_${index}_output_variable`;
+                        }
+                    } else if (outputConfig.type === 'inputParam') {
+                        // Find the matching input parameter and use its ID
+                        const matchedParam = inputParameters.find(p => p.name === outputConfig.value);
+                        outputValue = matchedParam?.id || '';
+                        outputVariableName = matchedParam?.size || '';
+                    } else if (outputConfig.type === 'static') {
+                        outputValue = outputConfig.value || '';
+                        outputVariableName = 'static_output';
+                    }
+
+                    return {
+                        id: stepId,
+                        type: "output",
+                        outputVariableName: outputVariableName,
+                        returnType: outputConfig.dataType?.toLowerCase() || "any",
+                        data: {
+                            type: outputConfig.type || "",
+                            dataType: outputConfig.dataType?.toLowerCase() || "",
+                            value: outputValue
+                        },
+                        next: null
+                    };
+                }
+
+                return null;
+            }).filter(Boolean)
+        };
+
+        // Create the configuration object to save
+        const configToSave = {
+            ruleId: rule?.id,
+            ruleName: rule?.name,
+            savedAt: new Date().toISOString(),
+            inputParameters,
+            configurationSteps,
+            ruleFunction
+        };
+
+        try {
+            // Save to localStorage
+            saveRuleConfiguration(configToSave);
+
+            // Also update the rule object
+            if (rule) {
+                updateRule(rule.id, {
+                    ruleFunction
+                });
+            }
+
+            // Log the generated JSON with clear formatting
+            console.log("=".repeat(80));
+            console.log("✅ Configuration Saved Successfully!");
+            console.log("=".repeat(80));
+            console.log("Rule ID:", rule?.id);
+            console.log("Rule Name:", rule?.name);
+            console.log("=".repeat(80));
+            console.log("Generated Rule Function JSON:");
+            console.log(JSON.stringify(ruleFunction, null, 2));
+            console.log("=".repeat(80));
+            console.log("Full Configuration (including input params & steps):");
+            console.log(JSON.stringify(configToSave, null, 2));
+            console.log("=".repeat(80));
+            console.log("📍 Stored in localStorage under key: 'rce_rule_configurations'");
+            console.log("=".repeat(80));
+
+            // Show success confirmation modal
+            Modal.confirm({
+                title: 'Rule Saved Successfully',
+                okText: 'OK',
+                centered: true,
+                icon: null,
+                cancelButtonProps: { style: { display: 'none' } },
+                onOk() {
+                    navigate('/rules');
+                }
+            });
+        } catch (error) {
+            console.error('Failed to save configuration:', error);
+            Modal.error({
+                title: 'Save Failed',
+                content: 'Failed to save configuration. Please try again.',
+                okText: 'OK',
+                centered: true
+            });
+        }
+    };
+
+    const handleGenerateJavaScript = () => {
+        setIsJsModalOpen(true);
+    };
+
+    const handleCopyJavaScript = () => {
+        const dummyJsCode = `// Generated JavaScript Code for Rule: ${rule?.name || 'Unknown Rule'}
+function ruleFunction(inputParam1) {
+    // Step 1: Find and Replace
+    const step1Result = STRING_FIND_REPLACE(inputParam1, "\\\\", "<br>");
+
+    // Step 2: Return output
+    return step1Result;
+}
+
+// Example usage:
+const result = ruleFunction("Hello\\\\World");
+console.log(result); // Output: Hello<br>World`;
+
+        navigator.clipboard.writeText(dummyJsCode).then(() => {
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        }).catch(() => {
+            console.error('Failed to copy to clipboard');
+        });
+    };
+
+    const handleViewJson = () => {
+        // Generate current JSON from current state (not from saved)
+        if (rule && configurationSteps.length > 0) {
+            const ruleFunction = {
+                id: Date.now(),
+                code: "",
+                returnType: "string",
+                ruleId: rule.id,
+                inputParams: inputParameters.map((param, index) => ({
+                    id: parseInt(param.id),
+                    sequence: index + 1,
+                    name: param.size,
+                    dataType: param.dataType?.toLowerCase() || "string",
+                    paramType: param.type === "Input field" ? "inputField" :
+                        param.type === "Metadata field" ? "metadataField" : "default",
+                    mandatory: "true",
+                    default: "",
+                    description: ""
+                })),
+                steps: configurationSteps.map((step, index) => {
+                    const stepId = step.id;
+                    const nextStep = index < configurationSteps.length - 1 ? configurationSteps[index + 1].id : null;
+
+                    if (step.type === 'subfunction') {
+                        const subfunc = SUBFUNCTIONS.find(f => f.id === step.subfunctionId);
+                        const config = step.config || {};
+                        return {
+                            id: stepId,
+                            type: "subFunction",
+                            outputVariableName: config.outputVariable || `step_${index + 1}_output_variable`,
+                            returnType: subfunc?.returnType?.toLowerCase() || "string",
+                            subFunction: { id: step.subfunctionId, inputParams: [] },
+                            next: nextStep
+                        };
+                    } else if (step.type === 'output') {
+                        const outputConfig = step.config || {};
+                        return {
+                            id: stepId,
+                            type: "output",
+                            outputVariableName: null,
+                            returnType: outputConfig.dataType?.toLowerCase() || "any",
+                            data: {
+                                type: outputConfig.type || "",
+                                dataType: outputConfig.dataType?.toLowerCase() || "",
+                                value: ""
+                            },
+                            next: null
+                        };
+                    }
+                    return null;
+                }).filter(Boolean)
+            };
+            setCurrentJson(ruleFunction);
+            setIsJsonModalOpen(true);
+        } else {
+            alert("No configuration steps found. Please add some steps first.");
+        }
+    };
+
+    const handleCopyJson = () => {
+        if (currentJson) {
+            navigator.clipboard.writeText(JSON.stringify(currentJson, null, 2));
+            alert("JSON copied to clipboard!");
+        }
+    };
+
     if (!rule) {
         return (
             <Layout>
@@ -276,68 +577,68 @@ export default function RuleCreatePage() {
                                         {/* Type Column */}
                                         <div>
                                             <Label className="text-sm font-medium text-gray-700 mb-2 block">Type <span className="text-black">*</span></Label>
-                                        <CustomSelect
-                                            value={param.type}
-                                            onChange={(e) => updateInputParameter(param.id, 'type', e.target.value)}
-                                            className="w-full"
-                                            selectSize="lg"
-                                            variant={parameterErrors[param.id]?.type ? 'error' : 'default'}
-                                            disabled={parametersLocked}
-                                        >
-                                            <option value="Input field">Input field</option>
-                                            <option value="Metadata field">Metadata field</option>
-                                            <option value="String">String</option>
-                                        </CustomSelect>
-                                        {parameterErrors[param.id]?.type && (
-                                            <span className="text-red-500 text-xs mt-1 block">This field is required</span>
-                                        )}
-                                    </div>
+                                            <CustomSelect
+                                                value={param.type}
+                                                onChange={(e) => updateInputParameter(param.id, 'type', e.target.value)}
+                                                className="w-full"
+                                                selectSize="lg"
+                                                variant={parameterErrors[param.id]?.type ? 'error' : 'default'}
+                                                disabled={parametersLocked}
+                                            >
+                                                <option value="Input field">Input field</option>
+                                                <option value="Metadata field">Metadata field</option>
+                                                <option value="String">String</option>
+                                            </CustomSelect>
+                                            {parameterErrors[param.id]?.type && (
+                                                <span className="text-red-500 text-xs mt-1 block">This field is required</span>
+                                            )}
+                                        </div>
 
-                                    {/* Field Name Column */}
-                                    <div>
-                                        <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                            {param.type === 'Metadata field' ? 'Metadata Field Name' :
-                                                param.type === 'String' || param.type === 'Number' || param.type === 'Date' || param.type === 'Boolean' ? 'Parameter Name' :
-                                                    'Field Name'} <span className="text-black">*</span>
-                                        </Label>
-                                        <Input
-                                            value={param.size}
-                                            onChange={(e) => updateInputParameter(param.id, 'size', e.target.value)}
-                                            placeholder={
-                                                param.type === 'Metadata field' ? 'Enter metadata field name' :
-                                                    param.type === 'String' || param.type === 'Number' || param.type === 'Date' || param.type === 'Boolean' ? 'Enter parameter name' :
-                                                        'Enter field name'
-                                            }
-                                            className="w-full"
-                                            inputSize="lg"
-                                            variant={parameterErrors[param.id]?.size ? 'error' : 'default'}
-                                            disabled={parametersLocked}
-                                        />
-                                        {parameterErrors[param.id]?.size && (
-                                            <span className="text-red-500 text-xs mt-1 block">This field is required</span>
-                                        )}
-                                    </div>
+                                        {/* Field Name Column */}
+                                        <div>
+                                            <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                                {param.type === 'Metadata field' ? 'Metadata Field Name' :
+                                                    param.type === 'String' || param.type === 'Number' || param.type === 'Date' || param.type === 'Boolean' ? 'Parameter Name' :
+                                                        'Field Name'} <span className="text-black">*</span>
+                                            </Label>
+                                            <Input
+                                                value={param.size}
+                                                onChange={(e) => updateInputParameter(param.id, 'size', e.target.value)}
+                                                placeholder={
+                                                    param.type === 'Metadata field' ? 'Enter metadata field name' :
+                                                        param.type === 'String' || param.type === 'Number' || param.type === 'Date' || param.type === 'Boolean' ? 'Enter parameter name' :
+                                                            'Enter field name'
+                                                }
+                                                className="w-full"
+                                                inputSize="lg"
+                                                variant={parameterErrors[param.id]?.size ? 'error' : 'default'}
+                                                disabled={parametersLocked}
+                                            />
+                                            {parameterErrors[param.id]?.size && (
+                                                <span className="text-red-500 text-xs mt-1 block">This field is required</span>
+                                            )}
+                                        </div>
 
-                                    {/* Field Data Type Column */}
-                                    <div>
-                                        <Label className="text-sm font-medium text-gray-700 mb-2 block">Field Data Type <span className="text-black">*</span></Label>
-                                        <CustomSelect
-                                            value={param.dataType || 'String'}
-                                            onChange={(e) => updateInputParameter(param.id, 'dataType', e.target.value)}
-                                            className="w-full"
-                                            selectSize="lg"
-                                            variant={parameterErrors[param.id]?.dataType ? 'error' : 'default'}
-                                            disabled={parametersLocked}
-                                        >
-                                            <option value="String">String</option>
-                                            <option value="Integer">Integer</option>
-                                            <option value="Float">Float</option>
-                                            <option value="Boolean">Boolean</option>
-                                        </CustomSelect>
-                                        {parameterErrors[param.id]?.dataType && (
-                                            <span className="text-red-500 text-xs mt-1 block">This field is required</span>
-                                        )}
-                                    </div>
+                                        {/* Field Data Type Column */}
+                                        <div>
+                                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Field Data Type <span className="text-black">*</span></Label>
+                                            <CustomSelect
+                                                value={param.dataType || 'String'}
+                                                onChange={(e) => updateInputParameter(param.id, 'dataType', e.target.value)}
+                                                className="w-full"
+                                                selectSize="lg"
+                                                variant={parameterErrors[param.id]?.dataType ? 'error' : 'default'}
+                                                disabled={parametersLocked}
+                                            >
+                                                <option value="String">String</option>
+                                                <option value="Integer">Integer</option>
+                                                <option value="Float">Float</option>
+                                                <option value="Boolean">Boolean</option>
+                                            </CustomSelect>
+                                            {parameterErrors[param.id]?.dataType && (
+                                                <span className="text-red-500 text-xs mt-1 block">This field is required</span>
+                                            )}
+                                        </div>
 
                                         {/* Delete Button Column */}
                                         <div className="flex items-start justify-end pt-8">
@@ -362,7 +663,7 @@ export default function RuleCreatePage() {
                     </div>
 
                     {/* Start Configuration */}
-                    <div className="flex flex-col items-center py-8">
+                    <div className="flex flex-col items-center py-5">
                         <p className="text-base font-semibold text-gray-900 mb-4">Start Configuration</p>
                         <Button
                             type="primary"
@@ -387,38 +688,34 @@ export default function RuleCreatePage() {
                                         step={step}
                                         inputParameters={inputParameters}
                                         stepIndex={index}
+                                        configurationSteps={configurationSteps}
+                                        onConfigUpdate={handleConfigUpdate}
                                     />
 
-                                    {/* Vertical connector line */}
-                                    <div className="h-8 w-px bg-gray-300 mx-auto -mt-6"></div>
+                                    {/* Vertical connector line - Don't show after output card */}
+                                    {step.type !== 'output' && (
+                                        <div className="h-10 w-px bg-gray-300 mx-auto -mt-6"></div>
+                                    )}
 
-                                    {/* Add Button - Only enabled for the last card */}
-                                    <div className="flex justify-center mb-8">
-                                        <Button
-                                            type="primary"
-                                            className="border-none px-8 h-10 rounded-md bg-red-500 hover:bg-red-400 disabled:bg-gray-300 disabled:text-gray-500"
-                                            onClick={() => handleAddStep(index)}
-                                            disabled={index !== configurationSteps.length - 1}
-                                        >
-                                            Add
-                                        </Button>
-                                    </div>
+                                    {/* Add Button - Only show for the last card if it's not an output card */}
+                                    {index === configurationSteps.length - 1 && step.type !== 'output' && (
+                                        <div className="flex justify-center mb-8">
+                                            <Button
+                                                type="primary"
+                                                className="border-none px-8 h-10 rounded-md bg-red-500 hover:bg-red-400"
+                                                onClick={() => handleAddStep(index)}
+                                            >
+                                                Add
+                                            </Button>
+                                        </div>
+                                    )}
 
                                     {/* Connector line to next card if not the last one */}
                                     {index < configurationSteps.length - 1 && (
-                                        <div className="h-8 w-px bg-gray-300 mx-auto -mt-8"></div>
+                                        <div className="h-10 w-px bg-gray-300 mx-auto -mt-8"></div>
                                     )}
                                 </div>
                             ))}
-
-                            {/* Output Section */}
-                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-                                <h3 className="text-base font-medium text-gray-900 mb-4">Output</h3>
-                                <Select selectSize="lg" className="w-full mb-4">
-                                    <option value="" disabled selected>Select</option>
-                                </Select>
-                                <div className="text-sm text-gray-500">Return</div>
-                            </div>
 
                             {/* Action Buttons */}
                             <div className="flex justify-between items-center py-6">
@@ -426,12 +723,19 @@ export default function RuleCreatePage() {
                                     <Button
                                         type="primary"
                                         size="large"
+                                        onClick={handleSave}
                                         className="bg-red-500 hover:bg-red-400 focus:bg-red-400 border-none"
                                     >
                                         Save
                                     </Button>
+                                    <Button
+                                        size="large"
+                                        onClick={handleGenerateJavaScript}
+                                        className="hover:border-red-400 hover:text-red-500 focus:border-red-400 focus:text-red-500"
+                                    >
+                                        Generate JavaScript
+                                    </Button>
                                     <Button size="large" className="hover:border-red-400 hover:text-red-500 focus:border-red-400 focus:text-red-500">Test</Button>
-                                    <Button size="large" className="hover:border-red-400 hover:text-red-500 focus:border-red-400 focus:text-red-500">Generate JavaScript</Button>
                                 </div>
                                 <Button size="large" className="hover:border-red-400 hover:text-red-500 focus:border-red-400 focus:text-red-500">Cancel</Button>
                             </div>
@@ -555,8 +859,14 @@ export default function RuleCreatePage() {
 
                         {/* Output Card */}
                         <Panel header={<span className="font-semibold text-gray-900">Output Card</span>} key="4">
-                            <div className="text-sm text-gray-500">
-                                Output configuration options
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    onClick={() => handleFunctionSelect('output')}
+                                    className="rounded-full border-gray-300 text-gray-700 hover:border-red-500 hover:text-red-500 focus:border-red-500 focus:text-red-500"
+                                    size="small"
+                                >
+                                    Standard Card
+                                </Button>
                             </div>
                         </Panel>
 
@@ -592,6 +902,50 @@ export default function RuleCreatePage() {
                             </div>
                         </Panel>
                     </Collapse>
+                </div>
+            </Modal>
+
+            {/* Generated JavaScript Code Modal */}
+            <Modal
+                title={<span className="text-lg font-semibold">Generated JavaScript Code</span>}
+                open={isJsModalOpen}
+                onCancel={() => {
+                    setIsJsModalOpen(false);
+                    setIsCopied(false);
+                }}
+                footer={null}
+                width={800}
+                centered
+                closeIcon={<CloseOutlined style={{ fontSize: '16px' }} />}
+            >
+                <div className="mt-4 relative">
+                    <Button
+                        onClick={handleCopyJavaScript}
+                        className="absolute top-2 right-2 z-10 bg-white hover:bg-gray-50 border border-gray-200 rounded-md p-2 flex items-center justify-center"
+                        style={{ width: '32px', height: '32px', boxShadow: 'none' }}
+                    >
+                        {isCopied ? (
+                            <CheckOutlined className="text-gray-500 text-base" />
+                        ) : (
+                            <CopyOutlined className="text-gray-500 text-base" />
+                        )}
+                    </Button>
+                    <pre className="bg-gray-50 p-4 rounded-lg overflow-auto max-h-96 text-sm pr-16">
+                        <code className="text-gray-800">
+{`// Generated JavaScript Code for Rule: ${rule?.name || 'Unknown Rule'}
+function ruleFunction(inputParam1) {
+    // Step 1: Find and Replace
+    const step1Result = STRING_FIND_REPLACE(inputParam1, "\\\\", "<br>");
+
+    // Step 2: Return output
+    return step1Result;
+}
+
+// Example usage:
+const result = ruleFunction("Hello\\\\World");
+console.log(result); // Output: Hello<br>World`}
+                        </code>
+                    </pre>
                 </div>
             </Modal>
         </Layout>

@@ -6,7 +6,7 @@ export interface InputParameter {
     dataType?: string;
 }
 
-export type FunctionType = 'find-replace' | 'concatenate' | 'date-format' | 'conditional' | 'subfunction' | null;
+export type FunctionType = 'find-replace' | 'concatenate' | 'date-format' | 'conditional' | 'subfunction' | 'output' | null;
 
 export interface ConfigurationStep {
     id: string;

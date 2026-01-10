@@ -43,6 +43,8 @@ export interface Rule {
     functions?: RuleFunctionConfig[];
     outputVariable?: string;
     subRules?: SubRule[];
+    // Rule function configuration (JSON structure)
+    ruleFunction?: any;
 }
 
 // Legacy type alias for backward compatibility

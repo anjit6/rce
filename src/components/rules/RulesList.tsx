@@ -272,7 +272,7 @@ export default function RulesList() {
                         rowClassName="hover:bg-gray-50/50 cursor-pointer"
                         className="rules-table"
                         onRow={(record) => ({
-                            onClick: () => console.log('Clicked row:', record),
+                            onClick: () => navigate(`/rule/create/${record.id}`),
                         })}
                         locale={{
                             emptyText: (

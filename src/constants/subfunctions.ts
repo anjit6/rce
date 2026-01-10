@@ -7,6 +7,21 @@ import { Subfunction, Category } from '@/types/subfunction';
 export const SUBFUNCTIONS: Subfunction[] = [
   // STRING FUNCTIONS
   {
+    id: 2000,
+    name: "Find and Replace",
+    description: "Finds and replaces text with another text.",
+    version: "v1.0",
+    functionName: "STRING_FIND_REPLACE",
+    categoryId: "STR",
+    code: "function STRING_FIND_REPLACE(text, find, replaceWith){ try { const value = text.split(find).join(replaceWith); return { success: true, value }; } catch(e){ return { success:false, error:{code:500,message:e.message}}; } }",
+    inputParams: [
+      { name: "text", label: "Text", dataType: "STRING", mandatory: true, sequence: 1 },
+      { name: "find", label: "Find", dataType: "STRING", mandatory: true, sequence: 2 },
+      { name: "replaceWith", label: "Replace With", dataType: "STRING", mandatory: true, sequence: 3 }
+    ],
+    returnType: "STRING"
+  },
+  {
     id: 2001,
     name: "Replace All",
     description: "Replaces all occurrences of a substring inside the string.",

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React from 'react';
 import { Tooltip } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { ConfigurationStep, InputParameter } from '../../types/rule-configuration';
@@ -6,17 +6,18 @@ import { SUBFUNCTIONS } from '../../constants/subfunctions';
 import { Input } from '../ui/input';
 import { CustomSelect } from '../ui/custom-select';
 import { Label } from '../ui/label';
+import OutputCard from './OutputCard';
 
 interface RuleConfigurationCardProps {
     step: ConfigurationStep;
     inputParameters: InputParameter[];
     stepIndex: number;
+    configurationSteps?: ConfigurationStep[];
+    onConfigUpdate?: (stepId: string, config: any) => void;
 }
 
-export default function RuleConfigurationCard({ step, inputParameters, stepIndex }: RuleConfigurationCardProps) {
+export default function RuleConfigurationCard({ step, inputParameters, stepIndex, configurationSteps = [], onConfigUpdate }: RuleConfigurationCardProps) {
     if (!step.type) return null;
-
-    const [outputVariable, setOutputVariable] = useState(`step_${stepIndex + 1}_output_variable`);
 
     // Map category IDs to full names
     const getCategoryName = (categoryId: string) => {
@@ -34,11 +35,47 @@ export default function RuleConfigurationCard({ step, inputParameters, stepIndex
             const subfunc = SUBFUNCTIONS.find(f => f.id === step.subfunctionId);
             if (!subfunc) return null;
 
-            // eslint-disable-next-line react-hooks/rules-of-hooks
-            const [paramSelections, setParamSelections] = useState<{ [key: number]: string }>({});
+            const config = step.config || { params: [], outputVariable: `step_${stepIndex + 1}_output_variable` };
 
-            const handleParamChange = (paramIndex: number, value: string) => {
-                setParamSelections(prev => ({ ...prev, [paramIndex]: value }));
+            const handleParamTypeChange = (paramIndex: number, type: string) => {
+                const updatedParams = [...(config.params || [])];
+                updatedParams[paramIndex] = {
+                    ...(updatedParams[paramIndex] || {}),
+                    type,
+                    dataType: type === 'Static Value' ? '' : undefined,
+                    value: ''
+                };
+                if (onConfigUpdate) {
+                    onConfigUpdate(step.id, { ...config, params: updatedParams });
+                }
+            };
+
+            const handleParamDataTypeChange = (paramIndex: number, dataType: string) => {
+                const updatedParams = [...(config.params || [])];
+                updatedParams[paramIndex] = {
+                    ...(updatedParams[paramIndex] || {}),
+                    dataType
+                };
+                if (onConfigUpdate) {
+                    onConfigUpdate(step.id, { ...config, params: updatedParams });
+                }
+            };
+
+            const handleParamValueChange = (paramIndex: number, value: string) => {
+                const updatedParams = [...(config.params || [])];
+                updatedParams[paramIndex] = {
+                    ...(updatedParams[paramIndex] || {}),
+                    value
+                };
+                if (onConfigUpdate) {
+                    onConfigUpdate(step.id, { ...config, params: updatedParams });
+                }
+            };
+
+            const handleOutputVariableChange = (value: string) => {
+                if (onConfigUpdate) {
+                    onConfigUpdate(step.id, { ...config, outputVariable: value });
+                }
             };
 
             return (
@@ -58,44 +95,51 @@ export default function RuleConfigurationCard({ step, inputParameters, stepIndex
 
                     {/* Input Parameters Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                        {subfunc.inputParams?.map((param, idx) => (
-                            <div key={idx}>
-                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                                    {param.label || param.name}
-                                </Label>
-                                <CustomSelect
-                                    value={paramSelections[idx] || ''}
-                                    onChange={(e) => handleParamChange(idx, e.target.value)}
-                                    className="w-full"
-                                    selectSize="lg"
-                                >
-                                    <option value="" disabled>Select {param.label || param.name}</option>
-                                    {inputParameters.map(p => (
-                                        <option key={p.id} value={p.name}>{p.name}</option>
-                                    ))}
-                                    <option value="Static Value">Static Value</option>
-                                </CustomSelect>
-                                {paramSelections[idx] === 'Static Value' && (
-                                    <div className="mt-2 space-y-2">
-                                        <CustomSelect
-                                            className="w-full"
-                                            selectSize="lg"
-                                        >
-                                            <option value="" disabled>Data Type</option>
-                                            <option value="STRING">String</option>
-                                            <option value="NUMBER">Number</option>
-                                            <option value="BOOLEAN">Boolean</option>
-                                            <option value="DATE">Date</option>
-                                        </CustomSelect>
-                                        <Input
-                                            placeholder="Enter static value"
-                                            className="w-full"
-                                            inputSize="lg"
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                        {subfunc.inputParams?.map((param, idx) => {
+                            const paramConfig = config.params?.[idx] || {};
+                            return (
+                                <div key={idx}>
+                                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                        {param.label || param.name}
+                                    </Label>
+                                    <CustomSelect
+                                        value={paramConfig.type || ''}
+                                        onChange={(e) => handleParamTypeChange(idx, e.target.value)}
+                                        className="w-full"
+                                        selectSize="lg"
+                                    >
+                                        <option value="" disabled>Select {param.label || param.name}</option>
+                                        {inputParameters.map(p => (
+                                            <option key={p.id} value={p.name}>{p.name}</option>
+                                        ))}
+                                        <option value="Static Value">Static Value</option>
+                                    </CustomSelect>
+                                    {paramConfig.type === 'Static Value' && (
+                                        <div className="mt-2 space-y-2">
+                                            <CustomSelect
+                                                value={paramConfig.dataType || ''}
+                                                onChange={(e) => handleParamDataTypeChange(idx, e.target.value)}
+                                                className="w-full"
+                                                selectSize="lg"
+                                            >
+                                                <option value="" disabled>Data Type</option>
+                                                <option value="STRING">String</option>
+                                                <option value="NUMBER">Number</option>
+                                                <option value="BOOLEAN">Boolean</option>
+                                                <option value="DATE">Date</option>
+                                            </CustomSelect>
+                                            <Input
+                                                value={paramConfig.value || ''}
+                                                onChange={(e) => handleParamValueChange(idx, e.target.value)}
+                                                placeholder="Enter static value"
+                                                className="w-full"
+                                                inputSize="lg"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
 
                     {/* Output Variable */}
@@ -103,8 +147,8 @@ export default function RuleConfigurationCard({ step, inputParameters, stepIndex
                         <div className="flex items-center justify-between">
                             <Label className="text-sm font-medium text-gray-900">Output Variable</Label>
                             <Input
-                                value={outputVariable}
-                                onChange={(e) => setOutputVariable(e.target.value)}
+                                value={config.outputVariable || `step_${stepIndex + 1}_output_variable`}
+                                onChange={(e) => handleOutputVariableChange(e.target.value)}
                                 className="w-64"
                                 inputSize="lg"
                             />
@@ -350,6 +394,17 @@ export default function RuleConfigurationCard({ step, inputParameters, stepIndex
                         </div>
                     </div>
                 </div>
+            );
+
+        case 'output':
+            return (
+                <OutputCard
+                    step={step}
+                    inputParameters={inputParameters}
+                    configurationSteps={configurationSteps}
+                    stepIndex={stepIndex}
+                    onConfigUpdate={onConfigUpdate || (() => {})}
+                />
             );
 
         default:
