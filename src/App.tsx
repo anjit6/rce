@@ -1,5 +1,4 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import LoginPage from './pages/login';
 import RulesPage from './pages/rules';
 import RuleCreatePage from './pages/rules/create';
 
@@ -9,7 +8,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/rules" replace />} />
         <Route path="/rules" element={<RulesPage />} />
-        <Route path="/rules/create/:ruleId" element={<RuleCreatePage />} />
+        <Route path="/rule/create/:ruleId" element={<RuleCreatePage />} />
       </Routes>
     </BrowserRouter>
   );

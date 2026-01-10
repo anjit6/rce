@@ -1,5 +1,8 @@
-import { useEffect } from 'react';
-import { Modal, Form, Input, Button } from 'antd';
+import { useEffect, useState } from 'react';
+import { Modal, Button } from 'antd';
+import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
+import { Label } from '../ui/label';
 
 interface CreateRuleModalProps {
     isOpen: boolean;
@@ -8,23 +11,35 @@ interface CreateRuleModalProps {
     onSubmit: (data: { name: string; description: string }) => void;
 }
 
-interface FormValues {
-    name: string;
-    description: string;
-}
-
 export default function CreateRuleModal({ isOpen, ruleType, onClose, onSubmit }: CreateRuleModalProps) {
-    const [form] = Form.useForm();
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+    const [nameError, setNameError] = useState('');
 
     // Reset form when modal opens/closes
     useEffect(() => {
         if (!isOpen) {
-            form.resetFields();
+            setName('');
+            setDescription('');
+            setNameError('');
         }
-    }, [isOpen, form]);
+    }, [isOpen]);
 
-    const handleSubmit = async (values: FormValues) => {
-        onSubmit({ name: values.name, description: values.description || '' });
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+
+        // Validation
+        if (!name.trim()) {
+            setNameError('Please enter a rule name');
+            return;
+        }
+
+        setNameError('');
+        onSubmit({ name: name.trim(), description: description.trim() });
+
+        // Reset form
+        setName('');
+        setDescription('');
     };
 
     const getRuleTypeLabel = () => {
@@ -53,59 +68,63 @@ export default function CreateRuleModal({ isOpen, ruleType, onClose, onSubmit }:
             destroyOnClose
             className="create-rule-modal"
         >
-            <Form
-                form={form}
-                layout="vertical"
-                onFinish={handleSubmit}
-                requiredMark={false}
-                className="mt-6"
-            >
+            <form onSubmit={handleSubmit} className="mt-6">
                 {/* Rule Name */}
-                <Form.Item
-                    name="name"
-                    label={<span className="text-sm font-medium text-gray-700">Rule Name</span>}
-                    rules={[{ required: true, message: 'Please enter a rule name' }]}
-                >
+                <div className="mb-5">
+                    <Label htmlFor="rule-name" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Rule Name *
+                    </Label>
                     <Input
-                        placeholder="Placeholder text..."
-                        size="large"
+                        id="rule-name"
+                        placeholder="Rule Name..."
+                        inputSize="lg"
+                        value={name}
+                        onChange={(e) => {
+                            setName(e.target.value);
+                            if (nameError) setNameError('');
+                        }}
+                        variant={nameError ? 'error' : 'default'}
                         className="rounded-lg"
                     />
-                </Form.Item>
+                    {nameError && (
+                        <p className="text-sm text-red-500 mt-1">{nameError}</p>
+                    )}
+                </div>
 
                 {/* Rule Description */}
-                <Form.Item
-                    name="description"
-                    label={<span className="text-sm font-medium text-gray-700">Rule Description</span>}
-                >
-                    <Input.TextArea
-                        placeholder="Description ..."
+                <div className="mb-6">
+                    <Label htmlFor="rule-description" className="text-sm font-medium text-gray-700 mb-2 block">
+                        Rule Description
+                    </Label>
+                    <Textarea
+                        id="rule-description"
+                        placeholder="Rule Description ..."
                         rows={4}
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
                         className="rounded-lg resize-none"
                     />
-                </Form.Item>
+                </div>
 
                 {/* Actions */}
-                <Form.Item className="mb-0 mt-6">
-                    <div className="flex items-center justify-end gap-3">
-                        <Button
-                            onClick={onClose}
-                            size="large"
-                            className="rounded-lg px-6 hover:border-red-500 hover:text-red-500 focus:border-red-500 focus:text-red-500"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            type="primary"
-                            htmlType="submit"
-                            size="large"
-                            className="rounded-lg px-6 bg-red-600 hover:bg-red-500 focus:bg-red-500 border-none"
-                        >
-                            Create
-                        </Button>
-                    </div>
-                </Form.Item>
-            </Form>
+                <div className="flex items-center justify-end gap-3 mt-6">
+                    <Button
+                        onClick={onClose}
+                        size="large"
+                        className="rounded-lg px-6 hover:border-red-500 hover:text-red-500 focus:border-red-500 focus:text-red-500"
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        type="primary"
+                        htmlType="submit"
+                        size="large"
+                        className="rounded-lg px-6 bg-red-600 hover:bg-red-500 focus:bg-red-500 border-none"
+                    >
+                        Create
+                    </Button>
+                </div>
+            </form>
         </Modal>
     );
 }

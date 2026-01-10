@@ -1,86 +1,352 @@
-import { Button, Input, Select, Tooltip } from 'antd';
+import { useState } from 'react';
+import { Tooltip } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { ConfigurationStep, InputParameter } from '../../types/rule-configuration';
+import { SUBFUNCTIONS } from '../../constants/subfunctions';
+import { Input } from '../ui/input';
+import { CustomSelect } from '../ui/custom-select';
+import { Label } from '../ui/label';
 
 interface RuleConfigurationCardProps {
     step: ConfigurationStep;
     inputParameters: InputParameter[];
-    onDelete?: () => void;
+    stepIndex: number;
 }
 
-export default function RuleConfigurationCard({ step, inputParameters }: RuleConfigurationCardProps) {
+export default function RuleConfigurationCard({ step, inputParameters, stepIndex }: RuleConfigurationCardProps) {
     if (!step.type) return null;
 
+    const [outputVariable, setOutputVariable] = useState(`step_${stepIndex + 1}_output_variable`);
+
+    // Map category IDs to full names
+    const getCategoryName = (categoryId: string) => {
+        const categoryMap: { [key: string]: string } = {
+            'STR': 'String Function',
+            'NUM': 'Number Function',
+            'DATE': 'Date Function',
+            'UTIL': 'Utility Function'
+        };
+        return categoryMap[categoryId] || categoryId;
+    };
+
     switch (step.type) {
+        case 'subfunction': {
+            const subfunc = SUBFUNCTIONS.find(f => f.id === step.subfunctionId);
+            if (!subfunc) return null;
+
+            // eslint-disable-next-line react-hooks/rules-of-hooks
+            const [paramSelections, setParamSelections] = useState<{ [key: number]: string }>({});
+
+            const handleParamChange = (paramIndex: number, value: string) => {
+                setParamSelections(prev => ({ ...prev, [paramIndex]: value }));
+            };
+
+            return (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 relative">
+                    {/* Title Section with Category Badge */}
+                    <div className="mb-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-lg font-semibold text-gray-900">
+                                {subfunc.name}
+                            </h3>
+                            <span className="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 rounded">
+                                {getCategoryName(subfunc.categoryId || 'Function')}
+                            </span>
+                        </div>
+                        <p className="text-sm text-gray-500">{subfunc.description}</p>
+                    </div>
+
+                    {/* Input Parameters Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                        {subfunc.inputParams?.map((param, idx) => (
+                            <div key={idx}>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                                    {param.label || param.name}
+                                </Label>
+                                <CustomSelect
+                                    value={paramSelections[idx] || ''}
+                                    onChange={(e) => handleParamChange(idx, e.target.value)}
+                                    className="w-full"
+                                    selectSize="lg"
+                                >
+                                    <option value="" disabled>Select {param.label || param.name}</option>
+                                    {inputParameters.map(p => (
+                                        <option key={p.id} value={p.name}>{p.name}</option>
+                                    ))}
+                                    <option value="Static Value">Static Value</option>
+                                </CustomSelect>
+                                {paramSelections[idx] === 'Static Value' && (
+                                    <div className="mt-2 space-y-2">
+                                        <CustomSelect
+                                            className="w-full"
+                                            selectSize="lg"
+                                        >
+                                            <option value="" disabled>Data Type</option>
+                                            <option value="STRING">String</option>
+                                            <option value="NUMBER">Number</option>
+                                            <option value="BOOLEAN">Boolean</option>
+                                            <option value="DATE">Date</option>
+                                        </CustomSelect>
+                                        <Input
+                                            placeholder="Enter static value"
+                                            className="w-full"
+                                            inputSize="lg"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Output Variable */}
+                    <div className="border-t border-gray-200 pt-4">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium text-gray-900">Output Variable</Label>
+                            <Input
+                                value={outputVariable}
+                                onChange={(e) => setOutputVariable(e.target.value)}
+                                className="w-64"
+                                inputSize="lg"
+                            />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         case 'find-replace':
             return (
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 relative">
-                    <h3 className="text-base font-medium text-gray-900 mb-4">String Function - Find & Replace</h3>
-                    <div className="flex items-center gap-2 mb-4">
-                        <span className="text-base font-normal text-gray-900">Find and Replace</span>
-                        <Tooltip title="Find and Replace">
-                            <InfoCircleOutlined className="text-gray-400 cursor-help" />
-                        </Tooltip>
+                    {/* Title Section with Category Badge */}
+                    <div className="mb-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-lg font-semibold text-gray-900">Find & Replace</h3>
+                                <Tooltip title="Find and replace text in a string">
+                                    <InfoCircleOutlined className="text-gray-400 cursor-help" />
+                                </Tooltip>
+                            </div>
+                            <span className="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 rounded">
+                                String Function
+                            </span>
+                        </div>
+                        <p className="text-sm text-gray-500">Replace all occurrences of a string with another string</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
-                        <Select
-                            placeholder="Search In"
-                            size="large"
-                            options={[
-                                ...inputParameters.map(param => ({ value: param.name, label: param.name })),
-                                { value: 'Static Text', label: 'Static Text' }
-                            ]}
-                        />
-                        <Select placeholder="Search For" size="large" />
-                        <Select placeholder="Replace With" size="large" />
+
+                    {/* Input Fields */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Input Parameter</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>Select input parameter</option>
+                                {inputParameters.map(param => (
+                                    <option key={param.id} value={param.name}>{param.name}</option>
+                                ))}
+                                <option value="Static Text">Static Text</option>
+                            </CustomSelect>
+                        </div>
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Find</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>Select find value</option>
+                            </CustomSelect>
+                        </div>
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Replace With</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>Select replace value</option>
+                            </CustomSelect>
+                        </div>
+                    </div>
+
+                    {/* Output Variable */}
+                    <div className="border-t border-gray-200 pt-4">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium text-gray-900">Output Variable</Label>
+                            <Input
+                                value={outputVariable}
+                                onChange={(e) => setOutputVariable(e.target.value)}
+                                className="w-64"
+                                inputSize="lg"
+                            />
+                        </div>
                     </div>
                 </div>
             );
 
         case 'concatenate':
             return (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-                    <h3 className="text-base font-medium text-gray-900 mb-4">String Function - Concatenate</h3>
-                    <div className="grid grid-cols-3 gap-4 mb-4">
-                        <Select placeholder="Input Parameter 1" size="large" />
-                        <Select placeholder="Input Parameter 2" size="large" />
-                        <Select placeholder="Static Text" size="large" />
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 relative">
+                    {/* Title Section with Category Badge */}
+                    <div className="mb-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-lg font-semibold text-gray-900">Concatenate</h3>
+                                <Tooltip title="Combine multiple strings together">
+                                    <InfoCircleOutlined className="text-gray-400 cursor-help" />
+                                </Tooltip>
+                            </div>
+                            <span className="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 rounded">
+                                String Function
+                            </span>
+                        </div>
+                        <p className="text-sm text-gray-500">Combine multiple strings together</p>
                     </div>
-                    <Input placeholder="Enter Text" size="large" className="mb-4" />
+
+                    {/* Input Fields */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Input Parameter 1</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>Select input parameter</option>
+                            </CustomSelect>
+                        </div>
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Input Parameter 2</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>Select input parameter</option>
+                            </CustomSelect>
+                        </div>
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Static Text</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>Select static text</option>
+                            </CustomSelect>
+                        </div>
+                    </div>
+
+                    {/* Output Variable */}
+                    <div className="border-t border-gray-200 pt-4">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium text-gray-900">Output Variable</Label>
+                            <Input
+                                value={outputVariable}
+                                onChange={(e) => setOutputVariable(e.target.value)}
+                                className="w-64"
+                                inputSize="lg"
+                            />
+                        </div>
+                    </div>
                 </div>
             );
 
         case 'date-format':
             return (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-                    <h3 className="text-base font-medium text-gray-900 mb-4">Date Format</h3>
-                    <div className="space-y-4">
-                        <Select placeholder="Select Date Input" size="large" className="w-full" />
-                        <Select placeholder="Select Format (DD/MM/YYYY)" size="large" className="w-full" />
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 relative">
+                    {/* Title Section with Category Badge */}
+                    <div className="mb-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-lg font-semibold text-gray-900">Date Format</h3>
+                                <Tooltip title="Format date values">
+                                    <InfoCircleOutlined className="text-gray-400 cursor-help" />
+                                </Tooltip>
+                            </div>
+                            <span className="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 rounded">
+                                Date Function
+                            </span>
+                        </div>
+                        <p className="text-sm text-gray-500">Format date values</p>
+                    </div>
+
+                    {/* Input Fields */}
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Select Date Input</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>Select date input</option>
+                            </CustomSelect>
+                        </div>
+                        <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Select Format</Label>
+                            <CustomSelect selectSize="lg" className="w-full">
+                                <option value="" disabled selected>DD/MM/YYYY</option>
+                            </CustomSelect>
+                        </div>
+                    </div>
+
+                    {/* Output Variable */}
+                    <div className="border-t border-gray-200 pt-4">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium text-gray-900">Output Variable</Label>
+                            <Input
+                                value={outputVariable}
+                                onChange={(e) => setOutputVariable(e.target.value)}
+                                className="w-64"
+                                inputSize="lg"
+                            />
+                        </div>
                     </div>
                 </div>
             );
 
         case 'conditional':
             return (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-                    <h3 className="text-base font-medium text-gray-900 mb-4">Conditional - IF</h3>
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-4">
-                            <Select placeholder="Variable" size="large" />
-                            <Select placeholder="Equals" size="large" />
-                            <Select placeholder="Static Text" size="large" />
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 relative">
+                    {/* Title Section with Category Badge */}
+                    <div className="mb-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-lg font-semibold text-gray-900">IF</h3>
+                                <Tooltip title="Conditional logic - execute different actions based on conditions">
+                                    <InfoCircleOutlined className="text-gray-400 cursor-help" />
+                                </Tooltip>
+                            </div>
+                            <span className="px-3 py-1 text-sm font-medium text-blue-600 bg-blue-50 rounded">
+                                Conditional
+                            </span>
                         </div>
-                        <Input placeholder="Enter Value" size="large" />
+                        <p className="text-sm text-gray-500">Conditional logic - execute different actions based on conditions</p>
+                    </div>
+
+                    {/* Condition Fields */}
+                    <div className="space-y-4 mb-6">
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">Variable</Label>
+                                <CustomSelect selectSize="lg" className="w-full">
+                                    <option value="" disabled selected>Select variable</option>
+                                </CustomSelect>
+                            </div>
+                            <div>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">Operator</Label>
+                                <CustomSelect selectSize="lg" className="w-full">
+                                    <option value="" disabled selected>Equals</option>
+                                </CustomSelect>
+                            </div>
+                            <div>
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">Value</Label>
+                                <CustomSelect selectSize="lg" className="w-full">
+                                    <option value="" disabled selected>Select value</option>
+                                </CustomSelect>
+                            </div>
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-sm font-medium mb-2">TRUE</label>
-                                <Select placeholder="Select" size="large" className="w-full" />
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">TRUE</Label>
+                                <CustomSelect selectSize="lg" className="w-full">
+                                    <option value="" disabled selected>Select</option>
+                                </CustomSelect>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-2">FALSE</label>
-                                <Select placeholder="Select" size="large" className="w-full" />
+                                <Label className="text-sm font-medium text-gray-700 mb-2 block">FALSE</Label>
+                                <CustomSelect selectSize="lg" className="w-full">
+                                    <option value="" disabled selected>Select</option>
+                                </CustomSelect>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Output Variable */}
+                    <div className="border-t border-gray-200 pt-4">
+                        <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium text-gray-900">Output Variable</Label>
+                            <Input
+                                value={outputVariable}
+                                onChange={(e) => setOutputVariable(e.target.value)}
+                                className="w-64"
+                                inputSize="lg"
+                            />
                         </div>
                     </div>
                 </div>

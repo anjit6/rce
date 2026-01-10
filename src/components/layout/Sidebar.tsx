@@ -9,20 +9,20 @@ import {
     TeamOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
-    LogoutOutlined,
     UserOutlined
 } from '@ant-design/icons';
+import { LogOut } from 'lucide-react';
 
 type MenuItem = Required<MenuProps>['items'][number];
 
 const menuItems: MenuItem[] = [
     {
-        key: '/rules',
+        key: 'rules',
         icon: <FileTextOutlined className="text-lg" />,
         label: 'Rules',
     },
     {
-        key: '/approvals',
+        key: 'approvals',
         icon: <CheckCircleOutlined className="text-lg" />,
         label: 'Approvals',
     },
@@ -50,18 +50,28 @@ interface SidebarProps {
     userEmail?: string;
     userAvatar?: string;
     onLogout?: () => void;
+    onCollapse?: (collapsed: boolean) => void;
 }
 
 export default function Sidebar({
-    currentPath = '/rules',
+    currentPath = 'rules',
     onNavigate,
     userName = 'John Doe',
     userEmail = 'john.doe@example.com',
     userAvatar,
-    onLogout
+    onLogout,
+    onCollapse
 }: SidebarProps) {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [selectedKey, setSelectedKey] = useState(currentPath);
+
+    const handleToggleCollapse = () => {
+        const newCollapsedState = !isCollapsed;
+        setIsCollapsed(newCollapsedState);
+        if (onCollapse) {
+            onCollapse(newCollapsedState);
+        }
+    };
 
     const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
         setSelectedKey(key);
@@ -81,37 +91,55 @@ export default function Sidebar({
 
     return (
         <aside
-            className={`fixed left-0 top-0 h-screen bg-gray-50 border-r border-gray-200 flex flex-col transition-all duration-300 z-30 ${isCollapsed ? 'w-20' : 'w-64'
+            className={`fixed left-0 top-0 h-screen bg-white border-r border-gray-200 flex flex-col transition-all duration-300 z-20 ${isCollapsed ? 'w-20' : 'w-64'
                 }`}
         >
             {/* Logo Header with Collapse Button */}
-            <div className={`px-5 py-6 flex items-center gap-3 border-b border-gray-200 bg-white ${isCollapsed ? 'justify-center' : ''}`}>
-                <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-red-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-500/20">
-                    <svg width="20" height="20" viewBox="0 0 24 24" className="w-5 h-5 text-white flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                        <path d="M2 17l10 5 10-5" />
-                        <path d="M2 12l10 5 10-5" />
-                    </svg>
-                </div>
-                {!isCollapsed && (
-                    <div className="overflow-hidden flex-1">
-                        <h1 className="text-sm font-bold text-gray-900 whitespace-nowrap">Rules Configuration</h1>
-                        <p className="text-xs text-gray-500">Engine</p>
-                    </div>
+            <div className={`py-6 flex items-center border-b border-gray-200 bg-white ${isCollapsed ? 'px-3 flex-col gap-2' : 'px-5 gap-3'}`}>
+                {isCollapsed ? (
+                    <>
+                        {/* Collapse Toggle Button - Top when collapsed */}
+                        <Tooltip title="Expand" placement="right">
+                            <button
+                                onClick={handleToggleCollapse}
+                                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <MenuUnfoldOutlined className="text-base" />
+                            </button>
+                        </Tooltip>
+                        {/* Logo - Bottom when collapsed */}
+                        <div className="w-10 h-10 flex items-center justify-center">
+                            <img
+                                src="/src/assets/images/logo.png"
+                                alt="Logo"
+                                className="w-10 h-10 object-contain"
+                            />
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
+                            <img
+                                src="/src/assets/images/logo.png"
+                                alt="Logo"
+                                className="w-10 h-10 object-contain"
+                            />
+                        </div>
+                        <div className="overflow-hidden flex-1">
+                            <h1 className="text-xs font-bold text-gray-900 whitespace-nowrap">Rules Configuration</h1>
+                            <h1 className="text-xs font-bold text-gray-900 whitespace-nowrap">Engine</h1>
+                        </div>
+                        {/* Collapse Toggle Button */}
+                        <Tooltip title="Collapse" placement="right">
+                            <button
+                                onClick={handleToggleCollapse}
+                                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                            >
+                                <MenuFoldOutlined className="text-base" />
+                            </button>
+                        </Tooltip>
+                    </>
                 )}
-                {/* Collapse Toggle Button */}
-                <Tooltip title={isCollapsed ? 'Expand' : 'Collapse'} placement="right">
-                    <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-                    >
-                        {isCollapsed ? (
-                            <MenuUnfoldOutlined className="text-base" />
-                        ) : (
-                            <MenuFoldOutlined className="text-base" />
-                        )}
-                    </button>
-                </Tooltip>
             </div>
 
             {/* Menu Label */}
@@ -124,7 +152,7 @@ export default function Sidebar({
             )}
 
             {/* Navigation Menu */}
-            <nav className="flex-1 px-3 py-2">
+            <nav className={`flex-1 py-2 ${isCollapsed ? 'px-0' : 'px-3'}`}>
                 <Menu
                     mode="inline"
                     selectedKeys={[selectedKey]}
@@ -137,7 +165,7 @@ export default function Sidebar({
             </nav>
 
             {/* User Profile Section */}
-            <div className={`px-4 py-4 border-t border-gray-200 bg-white ${isCollapsed ? 'px-2' : ''}`}>
+            <div className={`px-4 py-5 border-gray-200 bg-white ${isCollapsed ? 'px-2' : ''}`}>
                 <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
                     {/* Profile Avatar */}
                     <Tooltip title={isCollapsed ? userName : ''} placement="right">
@@ -145,7 +173,7 @@ export default function Sidebar({
                             size={40}
                             src={userAvatar}
                             icon={!userAvatar && <UserOutlined />}
-                            className="flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-500 cursor-pointer"
+                            className="flex-shrink-0 bg-gradient-to-br from-red-600 to-red-500 cursor-pointer"
                         />
                     </Tooltip>
 
@@ -162,9 +190,9 @@ export default function Sidebar({
                         <Tooltip title="Logout" placement="top">
                             <button
                                 onClick={handleLogout}
-                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex-shrink-0"
                             >
-                                <LogoutOutlined className="text-base" />
+                                <LogOut className="h-4 w-4" />
                             </button>
                         </Tooltip>
                     )}
@@ -175,9 +203,9 @@ export default function Sidebar({
                     <Tooltip title="Logout" placement="right">
                         <button
                             onClick={handleLogout}
-                            className="w-full mt-3 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center"
+                            className="w-full mt-3 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center"
                         >
-                            <LogoutOutlined className="text-base" />
+                            <LogOut className="h-4 w-4" />
                         </button>
                     </Tooltip>
                 )}
