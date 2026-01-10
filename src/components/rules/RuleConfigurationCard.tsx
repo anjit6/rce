@@ -110,8 +110,17 @@ export default function RuleConfigurationCard({ step, inputParameters, stepIndex
                                     >
                                         <option value="" disabled>Select {param.label || param.name}</option>
                                         {inputParameters.map(p => (
-                                            <option key={p.id} value={p.name}>{p.name}</option>
+                                            <option key={p.id} value={p.name}>{p.fieldName}</option>
                                         ))}
+                                        {configurationSteps
+                                            .slice(0, stepIndex)
+                                            .filter(s => s.type === 'subfunction' && s.config?.outputVariable)
+                                            .map((s) => (
+                                                <option key={`step-${s.id}`} value={s.config.outputVariable}>
+                                                    {s.config.outputVariable}
+                                                </option>
+                                            ))
+                                        }
                                         <option value="Static Value">Static Value</option>
                                     </CustomSelect>
                                     {paramConfig.type === 'Static Value' && (
@@ -122,7 +131,7 @@ export default function RuleConfigurationCard({ step, inputParameters, stepIndex
                                                 className="w-full"
                                                 selectSize="lg"
                                             >
-                                                <option value="" disabled>Data Type</option>
+                                                <option value="" disabled>Select data type</option>
                                                 <option value="STRING">String</option>
                                                 <option value="NUMBER">Number</option>
                                                 <option value="BOOLEAN">Boolean</option>
@@ -403,7 +412,7 @@ export default function RuleConfigurationCard({ step, inputParameters, stepIndex
                     inputParameters={inputParameters}
                     configurationSteps={configurationSteps}
                     stepIndex={stepIndex}
-                    onConfigUpdate={onConfigUpdate || (() => {})}
+                    onConfigUpdate={onConfigUpdate || (() => { })}
                 />
             );
 

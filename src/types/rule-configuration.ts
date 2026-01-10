@@ -1,7 +1,7 @@
 export interface InputParameter {
     id: string;
     name: string;
-    size: string;
+    fieldName: string;
     type: string;
     dataType?: string;
 }

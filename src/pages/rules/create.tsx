@@ -11,6 +11,7 @@ import RuleConfigurationCard from '../../components/rules/RuleConfigurationCard'
 import { Input } from '../../components/ui/input';
 import { CustomSelect } from '../../components/ui/custom-select';
 import { Label } from '../../components/ui/label';
+import { compileRule } from '../../utils/ruleCompiler';
 
 const { Panel } = Collapse;
 const { confirm } = Modal;
@@ -23,16 +24,17 @@ export default function RuleCreatePage() {
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [configurationSteps, setConfigurationSteps] = useState<ConfigurationStep[]>([]);
     const [inputParameters, setInputParameters] = useState<InputParameter[]>([
-        { id: '1', name: 'Input Parameter 1', size: '', type: 'String', dataType: 'String' }
+        { id: '1', name: 'Input Parameter 1', fieldName: '', type: 'Input field', dataType: 'String' }
     ]);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeAccordionKeys, setActiveAccordionKeys] = useState<string[]>([]);
-    const [parameterErrors, setParameterErrors] = useState<Record<string, { type?: boolean; size?: boolean; dataType?: boolean }>>({});
+    const [parameterErrors, setParameterErrors] = useState<Record<string, { type?: boolean; fieldName?: boolean; dataType?: boolean }>>({});
     const [parametersLocked, setParametersLocked] = useState(false);
     const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
     const [isJsModalOpen, setIsJsModalOpen] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
     const [currentJson, setCurrentJson] = useState<any>(null);
+    const [generatedJsCode, setGeneratedJsCode] = useState<string>('');
 
     useEffect(() => {
         if (ruleId) {
@@ -116,7 +118,7 @@ export default function RuleCreatePage() {
         const newParam: InputParameter = {
             id: Date.now().toString(),
             name: `Input Parameter ${inputParameters.length + 1}`,
-            size: '',
+            fieldName: '',
             type: 'String',
             dataType: 'String'
         };
@@ -124,7 +126,7 @@ export default function RuleCreatePage() {
         setInputParameters(updatedParams);
     };
 
-    const updateInputParameter = (id: string, field: 'size' | 'type' | 'dataType', value: string) => {
+    const updateInputParameter = (id: string, field: 'fieldName' | 'type' | 'dataType', value: string) => {
         setInputParameters(inputParameters.map(param =>
             param.id === id ? { ...param, [field]: value } : param
         ));
@@ -166,14 +168,14 @@ export default function RuleCreatePage() {
 
     const handleStartConfiguration = () => {
         // Validate input parameters
-        const newErrors: Record<string, { type?: boolean; size?: boolean; dataType?: boolean }> = {};
+        const newErrors: Record<string, { type?: boolean; fieldName?: boolean; dataType?: boolean }> = {};
         let hasErrors = false;
 
         inputParameters.forEach(param => {
-            const paramErrors: { type?: boolean; size?: boolean; dataType?: boolean } = {};
+            const paramErrors: { type?: boolean; fieldName?: boolean; dataType?: boolean } = {};
 
             if (!param.type) paramErrors.type = true;
-            if (!param.size.trim()) paramErrors.size = true;
+            if (!param.fieldName.trim()) paramErrors.fieldName = true;
             if (!param.dataType) paramErrors.dataType = true;
 
             if (Object.keys(paramErrors).length > 0) {
@@ -255,7 +257,7 @@ export default function RuleCreatePage() {
             inputParams: inputParameters.map((param, index) => ({
                 id: parseInt(param.id),
                 sequence: index + 1,
-                name: param.size, // The field name entered by user
+                name: param.fieldName, // The field name entered by user
                 dataType: param.dataType?.toLowerCase() || "string",
                 paramType: "inputField", // Always inputField for input parameters
                 mandatory: "true",
@@ -336,7 +338,7 @@ export default function RuleCreatePage() {
                         // Find the matching input parameter and use its ID
                         const matchedParam = inputParameters.find(p => p.name === outputConfig.value);
                         outputValue = matchedParam?.id || '';
-                        outputVariableName = matchedParam?.size || '';
+                        outputVariableName = matchedParam?.fieldName || '';
                     } else if (outputConfig.type === 'static') {
                         outputValue = outputConfig.value || '';
                         outputVariableName = 'static_output';
@@ -420,24 +422,119 @@ export default function RuleCreatePage() {
     };
 
     const handleGenerateJavaScript = () => {
-        setIsJsModalOpen(true);
+        // Generate the rule JSON from current state
+        if (rule && configurationSteps.length > 0) {
+            const ruleFunction = {
+                id: Date.now(),
+                code: "",
+                returnType: "string",
+                ruleId: rule.id,
+                inputParams: inputParameters.map((param, index) => ({
+                    id: parseInt(param.id),
+                    sequence: index + 1,
+                    name: param.fieldName,
+                    dataType: param.dataType?.toLowerCase() || "string",
+                    paramType: "inputField",
+                    mandatory: "true",
+                    default: "",
+                    description: ""
+                })),
+                steps: configurationSteps.map((step, index) => {
+                    const stepId = step.id;
+                    const nextStep = index < configurationSteps.length - 1 ? configurationSteps[index + 1].id : null;
+
+                    if (step.type === 'subfunction') {
+                        const subfunc = SUBFUNCTIONS.find(f => f.id === step.subfunctionId);
+                        const config = step.config || {};
+                        const inputParams = (config.params || []).map((paramConfig: any, paramIdx: number) => {
+                            let dataValue = '';
+                            let dataType = '';
+
+                            if (paramConfig.type === 'Static Value') {
+                                dataType = 'static';
+                                dataValue = paramConfig.value || '';
+                            } else if (paramConfig.type?.startsWith('Input Parameter')) {
+                                dataType = 'inputParam';
+                                const matchedParam = inputParameters.find(p => p.name === paramConfig.type);
+                                dataValue = matchedParam?.fieldName || '';
+                            } else {
+                                dataType = 'stepOutputVariable';
+                                dataValue = paramConfig.type || '';
+                            }
+
+                            return {
+                                subFuncParamId: String(paramIdx + 1),
+                                data: {
+                                    type: dataType,
+                                    value: dataValue
+                                }
+                            };
+                        });
+
+                        return {
+                            id: stepId,
+                            type: "subFunction",
+                            outputVariableName: config.outputVariable || `step_${index + 1}_output_variable`,
+                            returnType: subfunc?.returnType?.toLowerCase() || "string",
+                            subFunction: {
+                                id: subfunc?.functionName || String(step.subfunctionId),
+                                inputParams
+                            },
+                            next: nextStep
+                        };
+                    } else if (step.type === 'output') {
+                        const outputConfig = step.config || {};
+                        let outputValue = '';
+                        let outputType = outputConfig.type || '';
+
+                        if (outputConfig.type === 'stepOutputVariable') {
+                            outputValue = outputConfig.value || '';
+                        } else if (outputConfig.type === 'inputParam') {
+                            const matchedParam = inputParameters.find(p => p.name === outputConfig.value);
+                            outputValue = matchedParam?.fieldName || '';
+                        } else if (outputConfig.type === 'static') {
+                            outputValue = outputConfig.value || '';
+                        }
+
+                        return {
+                            id: stepId,
+                            type: "output",
+                            outputVariableName: null,
+                            returnType: outputConfig.dataType?.toLowerCase() || "any",
+                            data: {
+                                type: outputType,
+                                dataType: outputConfig.dataType?.toLowerCase() || "",
+                                value: outputValue
+                            },
+                            next: null
+                        };
+                    }
+
+                    return null;
+                }).filter(Boolean)
+            };
+
+            // Compile the rule to JavaScript
+            try {
+                const compiledCode = compileRule(ruleFunction as any);
+                setGeneratedJsCode(compiledCode);
+                setIsJsModalOpen(true);
+            } catch (error) {
+                console.error('Failed to compile rule:', error);
+                Modal.error({
+                    title: 'Compilation Failed',
+                    content: 'Failed to generate JavaScript code. Please check your rule configuration.',
+                    okText: 'OK',
+                    centered: true
+                });
+            }
+        } else {
+            alert("No configuration steps found. Please add some steps first.");
+        }
     };
 
     const handleCopyJavaScript = () => {
-        const dummyJsCode = `// Generated JavaScript Code for Rule: ${rule?.name || 'Unknown Rule'}
-function ruleFunction(inputParam1) {
-    // Step 1: Find and Replace
-    const step1Result = STRING_FIND_REPLACE(inputParam1, "\\\\", "<br>");
-
-    // Step 2: Return output
-    return step1Result;
-}
-
-// Example usage:
-const result = ruleFunction("Hello\\\\World");
-console.log(result); // Output: Hello<br>World`;
-
-        navigator.clipboard.writeText(dummyJsCode).then(() => {
+        navigator.clipboard.writeText(generatedJsCode).then(() => {
             setIsCopied(true);
             setTimeout(() => setIsCopied(false), 2000);
         }).catch(() => {
@@ -456,7 +553,7 @@ console.log(result); // Output: Hello<br>World`;
                 inputParams: inputParameters.map((param, index) => ({
                     id: parseInt(param.id),
                     sequence: index + 1,
-                    name: param.size,
+                    name: param.fieldName,
                     dataType: param.dataType?.toLowerCase() || "string",
                     paramType: param.type === "Input field" ? "inputField" :
                         param.type === "Metadata field" ? "metadataField" : "default",
@@ -602,8 +699,8 @@ console.log(result); // Output: Hello<br>World`;
                                                         'Field Name'} <span className="text-black">*</span>
                                             </Label>
                                             <Input
-                                                value={param.size}
-                                                onChange={(e) => updateInputParameter(param.id, 'size', e.target.value)}
+                                                value={param.fieldName}
+                                                onChange={(e) => updateInputParameter(param.id, 'fieldName', e.target.value)}
                                                 placeholder={
                                                     param.type === 'Metadata field' ? 'Enter metadata field name' :
                                                         param.type === 'String' || param.type === 'Number' || param.type === 'Date' || param.type === 'Boolean' ? 'Enter parameter name' :
@@ -611,10 +708,10 @@ console.log(result); // Output: Hello<br>World`;
                                                 }
                                                 className="w-full"
                                                 inputSize="lg"
-                                                variant={parameterErrors[param.id]?.size ? 'error' : 'default'}
+                                                variant={parameterErrors[param.id]?.fieldName ? 'error' : 'default'}
                                                 disabled={parametersLocked}
                                             />
-                                            {parameterErrors[param.id]?.size && (
+                                            {parameterErrors[param.id]?.fieldName && (
                                                 <span className="text-red-500 text-xs mt-1 block">This field is required</span>
                                             )}
                                         </div>
@@ -932,18 +1029,7 @@ console.log(result); // Output: Hello<br>World`;
                     </Button>
                     <pre className="bg-gray-50 p-4 rounded-lg overflow-auto max-h-96 text-sm pr-16">
                         <code className="text-gray-800">
-{`// Generated JavaScript Code for Rule: ${rule?.name || 'Unknown Rule'}
-function ruleFunction(inputParam1) {
-    // Step 1: Find and Replace
-    const step1Result = STRING_FIND_REPLACE(inputParam1, "\\\\", "<br>");
-
-    // Step 2: Return output
-    return step1Result;
-}
-
-// Example usage:
-const result = ruleFunction("Hello\\\\World");
-console.log(result); // Output: Hello<br>World`}
+                            {generatedJsCode || '// No code generated yet. Please configure your rule and try again.'}
                         </code>
                     </pre>
                 </div>

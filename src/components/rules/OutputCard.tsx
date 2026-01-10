@@ -10,14 +10,25 @@ interface OutputCardProps {
     onConfigUpdate: (stepId: string, config: any) => void;
 }
 
-export default function OutputCard({ step, onConfigUpdate }: OutputCardProps) {
+export default function OutputCard({ step, inputParameters, configurationSteps, stepIndex, onConfigUpdate }: OutputCardProps) {
     const config = step.config || { type: '', dataType: '', value: '' };
 
-    const handleTypeChange = (value: string) => {
+    const handleValueChange = (selectedValue: string) => {
+        let type = '';
+
+        // Determine type based on selected value
+        if (selectedValue === 'static') {
+            type = 'static';
+        } else if (inputParameters.some(p => p.name === selectedValue)) {
+            type = 'inputParam';
+        } else {
+            type = 'stepOutputVariable';
+        }
+
         onConfigUpdate(step.id, {
             ...config,
-            type: value,
-            value: '' // Reset value when type changes
+            type: type,
+            value: selectedValue
         });
     };
 
@@ -27,6 +38,12 @@ export default function OutputCard({ step, onConfigUpdate }: OutputCardProps) {
             dataType: value
         });
     };
+
+    // Get output variables from all previous steps
+    const previousOutputVariables = configurationSteps
+        .slice(0, stepIndex)
+        .filter(s => s.type === 'subfunction' && s.config?.outputVariable)
+        .map(s => s.config.outputVariable);
 
     return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 relative">
@@ -44,20 +61,24 @@ export default function OutputCard({ step, onConfigUpdate }: OutputCardProps) {
             {/* Two Dropdowns in Single Row */}
             <div className="mt-6">
                 <div className="grid grid-cols-2 gap-4 items-start">
-                    {/* First Dropdown - Type Selection */}
+                    {/* First Dropdown - Type Selection (shows actual values) */}
                     <div>
                         <Label className="text-sm font-medium text-gray-700 mb-2 block">
                             Type <span className="text-black">*</span>
                         </Label>
                         <CustomSelect
-                            value={config.type}
-                            onChange={(e) => handleTypeChange(e.target.value)}
+                            value={config.value}
+                            onChange={(e) => handleValueChange(e.target.value)}
                             className="w-full"
                             selectSize="lg"
                         >
                             <option value="">Select type</option>
-                            <option value="inputParam">Input Parameter</option>
-                            <option value="stepOutputVariable">Output Parameter</option>
+                            {inputParameters.map(p => (
+                                <option key={p.id} value={p.name}>{p.fieldName}</option>
+                            ))}
+                            {previousOutputVariables.map((varName, idx) => (
+                                <option key={`output-${idx}`} value={varName}>{varName}</option>
+                            ))}
                             <option value="static">Static</option>
                         </CustomSelect>
                     </div>
